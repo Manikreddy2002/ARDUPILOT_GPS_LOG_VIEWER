@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArduPilot GPS Log Analyzer</title>
+    <meta name="description" content="Analyze GPS data from ArduPilot UAV flight logs — satellite count, fix quality, HDOP, accuracy, and more.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Animated background -->
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="bg-glow bg-glow-3"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16" cy="16" r="14" stroke="#71717a" stroke-width="2" stroke-dasharray="3 3"/>
+                        <circle cx="16" cy="16" r="9" stroke="#d4d4d8" stroke-width="1.8"/>
+                        <circle cx="16" cy="16" r="3.5" fill="#22c55e"/>
+                        <line x1="16" y1="2" x2="16" y2="7" stroke="#e4e4e7" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="16" y1="25" x2="16" y2="30" stroke="#e4e4e7" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="2" y1="16" x2="7" y2="16" stroke="#e4e4e7" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="25" y1="16" x2="30" y2="16" stroke="#e4e4e7" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>GPS Log Analyzer</h1>
+                    <span class="logo-sub">ArduPilot Flight Data Analysis</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="btn-new-upload" class="btn btn-ghost" style="display:none;" onclick="resetAll()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    New Upload
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Upload Section -->
+    <section id="upload-section" class="section">
+        <div class="upload-container">
+            <div class="upload-zone" id="drop-zone">
+                <div class="upload-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <h2>Drop your flight logs here</h2>
+                <p>Upload one or multiple ArduPilot DataFlash <code>.bin</code> or <code>.log</code> files</p>
+                <div class="upload-btn-group">
+                    <label class="btn btn-primary upload-btn" for="file-input-single">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Single Log
+                    </label>
+                    <label class="btn btn-accent upload-btn" for="file-input-batch">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="16" height="14" rx="2"/><path d="M6 3h12a2 2 0 0 1 2 2v2H4V5a2 2 0 0 1 2-2z"/></svg>
+                        Batch Upload
+                    </label>
+                </div>
+                <input type="file" id="file-input-single" accept=".bin,.log" hidden>
+                <input type="file" id="file-input-batch" accept=".bin,.log" multiple hidden>
+            </div>
+        </div>
+    </section>
+
+    <!-- Loading State: Drone Animation -->
+    <section id="loading-section" class="section" style="display:none;">
+        <div class="loading-container">
+            <!-- Drone Stage -->
+            <div class="drone-stage">
+                <div class="drone-hover-wrap">
+                    <!-- Drone Quadcopter Body -->
+                    <div class="drone-quad">
+                        <!-- Arms -->
+                        <div class="drone-arm arm-fl">
+                            <div class="motor-mount">
+                                <div class="motor-led led-red"></div>
+                                <div class="rotor-blur"></div>
+                                <div class="propeller prop-cw"></div>
+                            </div>
+                        </div>
+                        <div class="drone-arm arm-fr">
+                            <div class="motor-mount">
+                                <div class="motor-led led-green"></div>
+                                <div class="rotor-blur"></div>
+                                <div class="propeller prop-ccw"></div>
+                            </div>
+                        </div>
+                        <div class="drone-arm arm-rl">
+                            <div class="motor-mount">
+                                <div class="motor-led led-white"></div>
+                                <div class="rotor-blur"></div>
+                                <div class="propeller prop-ccw"></div>
+                            </div>
+                        </div>
+                        <div class="drone-arm arm-rr">
+                            <div class="motor-mount">
+                                <div class="motor-led led-white"></div>
+                                <div class="rotor-blur"></div>
+                                <div class="propeller prop-cw"></div>
+                            </div>
+                        </div>
+
+                        <!-- Central Fuselage / Canopy -->
+                        <div class="drone-canopy">
+                            <div class="canopy-ridge"></div>
+                            <!-- GPS Mast & Puck -->
+                            <div class="drone-gps-puck">
+                                <div class="gps-beacon"></div>
+                            </div>
+                            <!-- Status Optical Sensor / Gimbal -->
+                            <div class="drone-camera-eye"></div>
+                        </div>
+                    </div>
+
+                    <!-- Downward Telemetry Scanning Beam -->
+                    <div class="drone-scan-beam"></div>
+                </div>
+
+                <!-- Ground Target Landing / Radar Grid -->
+                <div class="drone-ground-target">
+                    <div class="target-ring ring-1"></div>
+                    <div class="target-ring ring-2"></div>
+                    <div class="target-ring ring-3"></div>
+                    <div class="target-cross-h"></div>
+                    <div class="target-cross-v"></div>
+                    <div class="target-sweep"></div>
+                </div>
+            </div>
+
+            <!-- Parsing Status Telemetry HUD -->
+            <div class="loading-telemetry-hud">
+                <span class="hud-pill"><span class="hud-dot hud-dot-live"></span>GNSS UPLINK</span>
+                <span class="hud-pill">DATAFLASH PARSER</span>
+                <span class="hud-pill">EKF3 ESTIMATOR</span>
+            </div>
+
+            <h2 id="loading-text">Parsing flight log...</h2>
+            <p class="loading-sub" id="loading-subtext">Extracting GPS, GPA & UBX messages</p>
+
+            <div class="loading-progress" id="loading-progress" style="display:none;">
+                <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+                <span class="progress-label" id="progress-label">0 / 0</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="dashboard-section" class="section" style="display:none;">
+
+        <!-- File Tabs (batch mode) -->
+        <div class="file-tabs-bar" id="file-tabs-bar" style="display:none;">
+            <div class="file-tabs-scroll" id="file-tabs">
+                <!-- Tabs injected by JS -->
+            </div>
+        </div>
+
+        <!-- Batch Overview (hidden until overview tab clicked) -->
+        <div id="batch-overview" style="display:none;">
+            <div class="chart-card chart-card-full">
+                <div class="chart-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                        Batch Comparison — All Logs
+                    </h3>
+                    <button class="btn btn-ghost btn-sm" onclick="exportBatchCSV()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export Summary
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="batch-table">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Verdict</th>
+                                <th>Duration</th>
+                                <th>Distance</th>
+                                <th>Takeoff Alt</th>
+                                <th>Landing Alt</th>
+                                <th>ΔAlt (Drift)</th>
+                                <th>Landing Dist</th>
+                                <th>Samples</th>
+                                <th>Best Fix</th>
+                                <th>≥3D %</th>
+                                <th>Sats Avg</th>
+                                <th>HDOP Avg</th>
+                                <th>HAcc Avg</th>
+                                <th>Max Speed</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batch-table-body">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Batch All-Flights Combined Map -->
+            <div class="chart-card chart-card-full">
+                <div class="chart-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                        All Flights Geographic Map
+                    </h3>
+                    <div id="batch-map-legend" class="batch-map-legend"></div>
+                </div>
+                <div class="map-wrapper">
+                    <div id="batch-map" class="map-container"></div>
+                </div>
+            </div>
+            <!-- Batch comparison charts -->
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+                            Satellites — All Logs
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-batch-sats"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+                            HDOP — All Logs
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-batch-hdop"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Single File Dashboard (visible when a specific file is selected) -->
+        <div id="single-dashboard">
+            <!-- File info bar -->
+            <div class="file-info-bar">
+                <div class="file-info-inner">
+                    <div class="file-chip">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <span id="file-name">—</span>
+                    </div>
+                    <div class="file-meta">
+                        <span id="file-samples" class="meta-badge">— samples</span>
+                        <span id="file-duration" class="meta-badge">— min</span>
+                        <span id="file-msgs" class="meta-badge">— msg types</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overall GPS Health Verdict Banner -->
+            <div id="verdict-banner" class="verdict-banner verdict-good">
+                <div class="verdict-icon-box" id="verdict-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="verdict-content">
+                    <div class="verdict-header">
+                        <span class="verdict-tag" id="verdict-tag">GOOD</span>
+                        <span class="verdict-score" id="verdict-score">Score: 100/100</span>
+                    </div>
+                    <div class="verdict-sentence" id="verdict-sentence">Overall GPS Quality is GOOD...</div>
+                    <div class="verdict-chips" id="verdict-chips"></div>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="card-grid" id="summary-cards">
+            </div>
+
+            <!-- Charts Row 1: Fix Quality + Satellite Count -->
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            GPS Fix Quality
+                        </h3>
+                        <span class="chart-hint">Scroll to zoom · Drag to pan</span>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-fix"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                            Satellite Count
+                        </h3>
+                        <span class="chart-hint">Scroll to zoom · Drag to pan</span>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-sats"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Charts Row 2: HDOP + VDOP -->
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+                            HDOP (Horizontal Dilution)
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-hdop"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+                            VDOP (Vertical Dilution)
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-vdop"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Charts Row 3: Horizontal Accuracy + Vertical Accuracy -->
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                            Horizontal Accuracy (HAcc)
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-hacc"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                            Vertical Accuracy (VAcc)
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-vacc"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Charts Row 4: Speed + Altitude -->
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
+                            Ground Speed
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-speed"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+                            Altitude (MSL)
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-alt"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Charts Row 5: Fix Distribution Pie + Update Rate -->
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                            Fix Type Distribution
+                        </h3>
+                    </div>
+                    <div class="chart-wrap chart-wrap-pie"><canvas id="chart-fix-pie"></canvas></div>
+                </div>
+                <div class="chart-card" id="ubx-card" style="display:none;">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                            UBX Jamming / Noise
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-ubx"></canvas></div>
+                </div>
+                <div class="chart-card" id="update-rate-card">
+                    <div class="chart-header">
+                        <h3>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            GPS Update Interval
+                        </h3>
+                    </div>
+                    <div class="chart-wrap"><canvas id="chart-delta"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Map -->
+            <div class="chart-card chart-card-full">
+                <div class="chart-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                        Flight Path — GPS Track
+                    </h3>
+                    <div class="map-header-actions">
+                        <div class="map-legend">
+                            <span class="legend-dot legend-3d"></span> 3D Fix
+                            <span class="legend-dot legend-rtk-f"></span> RTK Float
+                            <span class="legend-dot legend-rtk"></span> RTK Fixed
+                            <span class="legend-dot legend-dgps"></span> DGPS
+                            <span class="legend-dot legend-bad"></span> No/2D Fix
+                        </div>
+                        <button class="btn btn-ghost btn-sm" id="btn-recenter-map" onclick="recenterMap()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m12 8 4 4-4 4M8 12h8"/></svg>
+                            Fit Track
+                        </button>
+                    </div>
+                </div>
+                <div class="map-wrapper">
+                    <div id="map" class="map-container"></div>
+                    <div id="map-stats-overlay" class="map-stats-overlay" style="display:none;"></div>
+                </div>
+            </div>
+
+            <!-- Takeoff & Landing Precision Analysis -->
+            <div class="chart-card chart-card-full precision-card">
+                <div class="chart-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
+                        Takeoff & Landing Precision Analysis (Sub-Meter Accuracy)
+                    </h3>
+                    <div id="precision-badge" class="precision-badge-wrap"></div>
+                </div>
+                <div class="precision-grid">
+                    <div class="precision-box">
+                        <span class="precision-label">Takeoff Altitude</span>
+                        <div class="precision-val"><span id="prec-start-alt">—</span> <span class="precision-unit">m</span></div>
+                        <span class="precision-sub" id="prec-start-sub">Initial elevation</span>
+                    </div>
+                    <div class="precision-box">
+                        <span class="precision-label">Landing Altitude</span>
+                        <div class="precision-val"><span id="prec-end-alt">—</span> <span class="precision-unit">m</span></div>
+                        <span class="precision-sub" id="prec-end-sub">Final touchdown elevation</span>
+                    </div>
+                    <div class="precision-box" id="box-alt-diff">
+                        <span class="precision-label">Altitude Difference (Drift)</span>
+                        <div class="precision-val"><span id="prec-alt-diff">—</span> <span class="precision-unit">m</span></div>
+                        <span class="precision-sub" id="prec-alt-diff-cm">—</span>
+                    </div>
+                    <div class="precision-box precision-box-accent">
+                        <span class="precision-label">Takeoff ➔ Landing Distance</span>
+                        <div class="precision-val"><span id="prec-landing-dist">—</span> <span class="precision-unit">m</span></div>
+                        <span class="precision-sub" id="prec-landing-dist-cm">—</span>
+                    </div>
+                    <div class="precision-box">
+                        <span class="precision-label">Total 3D Displacement</span>
+                        <div class="precision-val"><span id="prec-3d-dist">—</span> <span class="precision-unit">m</span></div>
+                        <span class="precision-sub" id="prec-3d-dist-cm">—</span>
+                    </div>
+                </div>
+                <div class="precision-summary-box" id="precision-summary-text">
+                    <!-- Dynamic analysis text injected by JS -->
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Error Section -->
+    <section id="error-section" class="section" style="display:none;">
+        <div class="error-container">
+            <div class="error-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+            </div>
+            <h2>Analysis Failed</h2>
+            <p id="error-message">An error occurred.</p>
+            <button class="btn btn-primary" onclick="resetAll()">Try Again</button>
+        </div>
+    </section>
+
+    <footer class="footer" id="footer" style="display:none;">
+        <p>ArduPilot GPS Log Analyzer · Built for flight data analysis</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
