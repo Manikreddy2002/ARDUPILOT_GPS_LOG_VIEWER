@@ -15,7 +15,13 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 from pymavlink import mavutil
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static'),
+)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB max upload
 
 # Detect environment: On Vercel, root filesystem is read-only so use /tmp for uploads
