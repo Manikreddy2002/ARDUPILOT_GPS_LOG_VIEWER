@@ -145,7 +145,17 @@ function uploadSingle(file) {
         method: 'POST',
         body: formData,
     })
-        .then((res) => res.json())
+        .then(async (res) => {
+            if (!res.ok) {
+                if (res.status === 413) {
+                    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+                    throw new Error(`File size (${sizeMB} MB) exceeds Vercel's 4.5 MB serverless upload limit.\n\nVercel serverless functions cap uploads at 4.5 MB. To analyze large logs (up to 500 MB), use your local server (http://localhost:5000) which has no size limits.`);
+                }
+                const errText = await res.text();
+                throw new Error(errText || `Server error (${res.status})`);
+            }
+            return res.json();
+        })
         .then((data) => {
             if (data.error) {
                 showError(data.error);
@@ -187,7 +197,17 @@ function uploadBatch(files) {
         method: 'POST',
         body: formData,
     })
-        .then((res) => res.json())
+        .then(async (res) => {
+            if (!res.ok) {
+                if (res.status === 413) {
+                    const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
+                    throw new Error(`Batch upload size (${totalMB} MB) exceeds Vercel's 4.5 MB serverless limit.\n\nTo analyze large batches, use your local server (http://localhost:5000) which supports files up to 500 MB.`);
+                }
+                const errText = await res.text();
+                throw new Error(errText || `Server error (${res.status})`);
+            }
+            return res.json();
+        })
         .then((data) => {
             if (data.error && !data.files) {
                 showError(data.error);
