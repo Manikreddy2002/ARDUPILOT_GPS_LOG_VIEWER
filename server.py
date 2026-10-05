@@ -15,16 +15,15 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 from pymavlink import mavutil
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-app = Flask(
-    __name__,
-    template_folder=os.path.join(BASE_DIR, 'templates'),
-    static_folder=os.path.join(BASE_DIR, 'static'),
-)
+app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB max upload
 
-UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', os.path.join(tempfile.gettempdir(), 'gps_analyzer_uploads'))
+# Detect environment: On Vercel, root filesystem is read-only so use /tmp for uploads
+if os.environ.get('VERCEL'):
+    UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'uploads')
+else:
+    UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
